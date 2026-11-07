@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Magpie Panel</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="head">
+        <img class="logo" src="icon.svg" alt="" width="22" height="22" />
+        <div class="titles">
+          <h1>Magpie Panel</h1>
+          <p class="subtitle" data-i18n="subtitle">Magpie 懸浮面板</p>
+        </div>
+        <div class="head-status">
+          <span id="statusDot" class="dot" aria-hidden="true"></span>
+          <span id="statusText" class="status-text">—</span>
+        </div>
+      </header>
+
+      <p id="bridgeNote" class="notice" hidden></p>
+
+      <section class="card">
+        <h2 data-i18n="section.status">狀態</h2>
+        <dl class="rows">
+          <div class="row">
+            <dt data-i18n="row.auto">自動啟動</dt>
+            <dd id="stateAuto">—</dd>
+          </div>
+          <div class="row">
+            <dt data-i18n="row.path">程式路徑</dt>
+            <dd id="statePath" class="mono">—</dd>
+          </div>
+          <div class="row">
+            <dt data-i18n="row.last">上次啟動請求</dt>
+            <dd id="stateLast">—</dd>
+          </div>
+        </dl>
+        <p class="hint" data-i18n="status.explain">
+          浮窗是獨立程式，關閉 Magpie 不會關閉它。
+        </p>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="section.controls">控制</h2>
+        <button id="launchBtn" class="primary wide" type="button" data-i18n="btn.launch">
+          啟動浮窗
+        </button>
+
+        <label class="switch" for="autoLaunchInput">
+          <span data-i18n="auto.toggle">隨 Magpie 啟動浮窗</span>
+          <input id="autoLaunchInput" type="checkbox" />
+        </label>
+
+        <div class="field">
+          <label for="binaryInput" data-i18n="path.label">自訂程式路徑</label>
+          <input
+            id="binaryInput"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            data-i18n-placeholder="path.placeholder"
+            placeholder="C:\path\to\magpie-panel.exe"
+          />
+          <div class="actions">
+            <button id="saveBtn" type="button" data-i18n="btn.save">儲存</button>
+            <button id="clearBtn" type="button" data-i18n="btn.clear">清除</button>
+          </div>
+          <p id="pathError" class="error" role="alert"></p>
+          <p class="hint" data-i18n="path.hint">需為絕對路徑，且不能包含「..」。</p>
+        </div>
+
+        <p id="saveNote" class="note" role="status"></p>
+      </section>
+
+      <section class="card" id="usageCard">
+        <h2 data-i18n="section.usage">今日用量</h2>
+        <div class="stats">
+          <div class="stat">
+            <b id="usageCalls">—</b>
+            <span data-i18n="usage.calls">呼叫</span>
+          </div>
+          <div class="stat">
+            <b id="usageTokens">—</b>
+            <span data-i18n="usage.tokens">Tokens</span>
+          </div>
+          <div class="stat">
+            <b id="usageCost">—</b>
+            <span data-i18n="usage.cost">費用</span>
+          </div>
+        </div>
+        <p id="usageNote" class="hint"></p>
+      </section>
+
+      <section class="card about">
+        <h2 data-i18n="section.about">關於</h2>
+        <p data-i18n="about.separate">
+          浮窗是獨立程式，關閉 Magpie 不會關閉它；可在浮窗內設定開機啟動。
+        </p>
+        <p data-i18n="about.smartscreen">
+          首次啟動若出現 Windows SmartScreen，請選擇「仍要執行」。
+        </p>
+        <p>
+          <span data-i18n="about.data">資料與下載的程式位於</span>
+          <code>%APPDATA%\MagpiePanel</code>
+        </p>
+        <p data-i18n="about.logs">若啟動失敗，詳情會寫入 Magpie 的日誌。</p>
+      </section>
+    </main>
+
+    <script src="_magpie/bridge.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

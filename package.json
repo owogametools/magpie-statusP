@@ -1,0 +1,48 @@
+{
+  "name": "magpie-panel",
+  "version": "0.1.4",
+  "description": "Magpie plugin for Magpie Panel: finds, downloads and launches the floating panel app",
+  "type": "module",
+  "main": "./plugin/index.js",
+  "exports": {
+    ".": "./plugin/index.js",
+    "./server": "./plugin/index.js"
+  },
+  "files": [
+    "plugin/index.js",
+    "plugin/version.js",
+    "plugin/page",
+    "README.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/owogametools/magpie-statusP.git"
+  },
+  "homepage": "https://github.com/owogametools/magpie-statusP#readme",
+  "keywords": [
+    "magpie",
+    "magpie-plugin",
+    "panel"
+  ],
+  "magpie": {
+    "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByb2xlPSJpbWciIGFyaWEtbGFiZWw9Ik1hZ3BpZSBQYW5lbCI+CiAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTUiIGZpbGw9IiMxYzFjMWUiLz4KICA8cGF0aCBkPSJNMTQgNDFjMC0xMSA3LTE5IDE3LTE5IDYgMCAxMSAyIDE0IDZsNi0yLTQgN2MxIDIgMSA0IDEgNiAwIDgtNiAxMy0xNSAxM0gyMGMtNCAwLTYtMi02LTZ2LTVaIiBmaWxsPSIjZjVmNWY3Ii8+CiAgPHBhdGggZD0iTTQ3IDI3bDgtMi02IDctMi01WiIgZmlsbD0iI2Y1ZjVmNyIvPgogIDxjaXJjbGUgY3g9IjI4IiBjeT0iMzIiIHI9IjIuNyIgZmlsbD0iIzFjMWMxZSIvPgogIDxwYXRoIGQ9Ik00MSAzNGw4IDMtOCAzdi02WiIgZmlsbD0iI2Y5NzMxNiIvPgogIDxyZWN0IHg9IjM2IiB5PSI0NCIgd2lkdGg9IjE0IiBoZWlnaHQ9IjgiIHJ4PSIyLjUiIGZpbGw9IiNmOTczMTYiLz4KICA8cmVjdCB4PSIzOSIgeT0iNDciIHdpZHRoPSI4IiBoZWlnaHQ9IjEuNiIgcng9IjAuOCIgZmlsbD0iIzFjMWMxZSIgb3BhY2l0eT0iMC41NSIvPgo8L3N2Zz4K",
+    "page": {
+      "title": "Magpie Panel",
+      "file": "plugin/page/index.html",
+      "icon": "plugin/page/icon.svg",
+      "titles": {
+        "zh": "懸浮面板",
+        "zh-TW": "懸浮面板",
+        "en": "Magpie Panel"
+      }
+    },
+    "permissions": [
+      "usage:summary"
+    ],
+    "options": {
+      "binaryPath": "",
+      "autoLaunch": true
+    }
+  }
+}

@@ -1,0 +1,4 @@
+# The page icon is embedded byte-for-byte in both package.json files and
+# plugin/manifest.test.mjs compares the decoded data URI with the file, so its
+# line endings must not change across checkouts.
+plugin/page/icon.svg text eol=lf

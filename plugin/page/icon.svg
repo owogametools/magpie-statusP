@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Magpie Panel">
+  <rect width="64" height="64" rx="15" fill="#1c1c1e"/>
+  <path d="M14 41c0-11 7-19 17-19 6 0 11 2 14 6l6-2-4 7c1 2 1 4 1 6 0 8-6 13-15 13H20c-4 0-6-2-6-6v-5Z" fill="#f5f5f7"/>
+  <path d="M47 27l8-2-6 7-2-5Z" fill="#f5f5f7"/>
+  <circle cx="28" cy="32" r="2.7" fill="#1c1c1e"/>
+  <path d="M41 34l8 3-8 3v-6Z" fill="#f97316"/>
+  <rect x="36" y="44" width="14" height="8" rx="2.5" fill="#f97316"/>
+  <rect x="39" y="47" width="8" height="1.6" rx="0.8" fill="#1c1c1e" opacity="0.55"/>
+</svg>

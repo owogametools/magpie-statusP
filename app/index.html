@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Magpie Panel</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="titlebar" id="titlebar">
+        <div class="brand">
+          <span class="brand-logo" id="brandLogo" aria-hidden="true"></span>
+          <span class="brand-name">magpie</span>
+          <span
+            class="brand-dot off"
+            id="headerDot"
+            aria-hidden="true"
+          ></span>
+        </div>
+        <div class="header-actions">
+          <button
+            class="icon-btn"
+            id="refreshBtn"
+            type="button"
+            data-i18n-aria="common.refresh"
+            data-i18n-title="common.refresh"
+          ></button>
+          <button
+            class="icon-btn"
+            id="settingsBtn"
+            type="button"
+            data-i18n-aria="common.settings"
+            data-i18n-title="common.settings"
+          ></button>
+          <button
+            class="icon-btn"
+            id="hideBtn"
+            type="button"
+            data-i18n-aria="common.hide"
+            data-i18n-title="common.hide"
+          ></button>
+        </div>
+      </header>
+
+      <nav
+        class="tabs"
+        id="tabs"
+        role="tablist"
+        data-i18n-aria="tabs.label"
+      >
+        <button
+          class="tab"
+          id="tab-usage"
+          role="tab"
+          type="button"
+          aria-selected="true"
+          aria-controls="panel-usage"
+          data-tab="usage"
+          data-i18n="tab.usage"
+        ></button>
+        <button
+          class="tab"
+          id="tab-agents"
+          role="tab"
+          type="button"
+          aria-selected="false"
+          aria-controls="panel-agents"
+          tabindex="-1"
+          data-tab="agents"
+          data-i18n="tab.agents"
+        ></button>
+        <button
+          class="tab"
+          id="tab-actions"
+          role="tab"
+          type="button"
+          aria-selected="false"
+          aria-controls="panel-actions"
+          tabindex="-1"
+          data-tab="actions"
+          data-i18n="tab.actions"
+        ></button>
+        <button
+          class="tab"
+          id="tab-avatar"
+          role="tab"
+          type="button"
+          aria-selected="false"
+          aria-controls="panel-avatar"
+          tabindex="-1"
+          data-tab="avatar"
+          data-i18n="tab.avatar"
+        ></button>
+        <button
+          class="tab"
+          id="tab-settings"
+          role="tab"
+          type="button"
+          aria-selected="false"
+          aria-controls="panel-settings"
+          tabindex="-1"
+          data-tab="settings"
+          data-i18n="tab.settings"
+        ></button>
+      </nav>
+
+      <main class="content">
+        <section
+          class="tab-panel"
+          id="panel-usage"
+          role="tabpanel"
+          aria-labelledby="tab-usage"
+          tabindex="0"
+        ></section>
+        <section
+          class="tab-panel"
+          id="panel-agents"
+          role="tabpanel"
+          aria-labelledby="tab-agents"
+          tabindex="0"
+          hidden
+        ></section>
+        <section
+          class="tab-panel"
+          id="panel-actions"
+          role="tabpanel"
+          aria-labelledby="tab-actions"
+          tabindex="0"
+          hidden
+        ></section>
+        <section
+          class="tab-panel"
+          id="panel-avatar"
+          role="tabpanel"
+          aria-labelledby="tab-avatar"
+          tabindex="0"
+          hidden
+        ></section>
+        <section
+          class="tab-panel"
+          id="panel-settings"
+          role="tabpanel"
+          aria-labelledby="tab-settings"
+          tabindex="0"
+          hidden
+        ></section>
+      </main>
+
+      <footer class="footer" id="footer">
+        <div class="footer-status" id="footerStatus">
+          <span class="dot off" id="footerDot" aria-hidden="true"></span>
+          <span class="footer-status-text" id="footerStatusText"></span>
+        </div>
+        <div class="footer-actions">
+          <button
+            class="footer-btn"
+            id="footerOpen"
+            type="button"
+            data-i18n="footer.openMagpie"
+          ></button>
+          <button
+            class="footer-btn danger"
+            id="footerQuit"
+            type="button"
+            data-i18n="footer.quit"
+          ></button>
+        </div>
+      </footer>
+    </div>
+
+    <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
