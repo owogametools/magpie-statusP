@@ -75,6 +75,70 @@ test("both manifests ship the version helper", () => {
   );
 });
 
+test("both manifests ship the platform helper", () => {
+  assert.ok(
+    (rootManifest.files || []).includes("plugin/platform.js"),
+    "root package.json files must include plugin/platform.js",
+  );
+  assert.ok(
+    (pluginManifest.files || []).includes("platform.js"),
+    "plugin/package.json files must include platform.js",
+  );
+});
+
+test("the app version matches the plugin version", () => {
+  const config = readFileSync(
+    path.join(repoRoot, "app", "mygo.config.ts"),
+    "utf8",
+  );
+  const match = config.match(/^[ \t]*version:[ \t]*"([^"]+)"/m);
+  assert.ok(match, "app/mygo.config.ts has no version literal");
+  assert.equal(
+    match[1],
+    pluginManifest.version,
+    "app/mygo.config.ts version drifted from plugin/package.json",
+  );
+});
+
+// Magpie's GitHub card reads these from the package's own manifest.
+test("discovery metadata fits Magpie's card rules", () => {
+  for (const [label, manifest] of [
+    ["package.json", rootManifest],
+    ["plugin/package.json", pluginManifest],
+  ]) {
+    const name = manifest.magpie?.name;
+    assert.equal(typeof name, "string", `${label} has no magpie.name`);
+    assert.ok(name.trim().length > 0, `${label} magpie.name is empty`);
+    assert.ok(!/[\r\n]/.test(name), `${label} magpie.name must be one line`);
+    assert.ok(
+      Buffer.byteLength(name, "utf8") <= 80,
+      `${label} magpie.name is over 80 bytes`,
+    );
+
+    const summary = manifest.magpie?.summary;
+    assert.ok(
+      summary && typeof summary === "object",
+      `${label} has no magpie.summary`,
+    );
+    for (const lang of ["en", "zh"]) {
+      const value = summary[lang];
+      assert.equal(
+        typeof value,
+        "string",
+        `${label} magpie.summary.${lang} is missing`,
+      );
+      assert.ok(
+        !/[\r\n]/.test(value),
+        `${label} magpie.summary.${lang} must be one line`,
+      );
+      assert.ok(
+        Buffer.byteLength(value, "utf8") <= 300,
+        `${label} magpie.summary.${lang} is over 300 bytes`,
+      );
+    }
+  }
+});
+
 test("entry points resolve to the shipped server file", () => {
   const cases = [
     ["package.json", rootManifest, repoRoot, "plugin/index.js"],

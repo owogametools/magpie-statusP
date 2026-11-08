@@ -23,14 +23,13 @@ const TEXT = {
     "btn.relaunch": "重新啟動浮窗",
     "auto.toggle": "隨 Magpie 啟動浮窗",
     "path.label": "自訂程式路徑",
-    "path.placeholder": "C:\\path\\to\\magpie-panel.exe（留空則自動下載）",
+    "path.placeholder": "/path/to/magpie-panel（留空則自動下載）",
     "btn.save": "儲存",
     "btn.clear": "清除",
     "btn.saving": "儲存中…",
-    "path.hint": "需為絕對路徑，且不能包含「..」。",
+    "path.hint": "需為絕對路徑，且不能包含「..」。Windows 需為 .exe；macOS 可選 .app 或其執行檔；Linux 需為執行檔。",
     "error.relative": "請輸入絕對路徑。",
     "error.dotdot": "路徑不能包含「..」。",
-    "error.exe": "請選擇 .exe 檔案。",
     "error.nobridge": "找不到 Magpie bridge，請從 Magpie 開啟此頁面。",
     "note.launch": "已送出啟動請求，程式會在背景啟動。",
     "note.saved": "已儲存。",
@@ -47,7 +46,7 @@ const TEXT = {
     "usage.top": "最常用模型",
     "section.about": "關於",
     "about.separate": "浮窗是獨立程式，關閉 Magpie 不會關閉它；可在浮窗內設定開機啟動。",
-    "about.smartscreen": "首次啟動若出現 Windows SmartScreen，請選擇「仍要執行」。",
+    "about.smartscreen": "首次啟動若出現 Windows SmartScreen 或 macOS Gatekeeper 警告，請選擇允許執行（或右鍵開啟）。",
     "about.data": "資料與下載的程式位於",
     "about.logs": "若啟動失敗，詳情會寫入 Magpie 的日誌。",
   },
@@ -70,14 +69,13 @@ const TEXT = {
     "btn.relaunch": "重新啟動浮窗",
     "auto.toggle": "隨 Magpie 啟動浮窗",
     "path.label": "自訂程式路徑",
-    "path.placeholder": "C:\\path\\to\\magpie-panel.exe（留空則自動下載）",
+    "path.placeholder": "/path/to/magpie-panel（留空則自動下載）",
     "btn.save": "儲存",
     "btn.clear": "清除",
     "btn.saving": "儲存中…",
-    "path.hint": "需為絕對路徑，且不能包含「..」。",
+    "path.hint": "需為絕對路徑，且不能包含「..」。Windows 需為 .exe；macOS 可選 .app 或其執行檔；Linux 需為執行檔。",
     "error.relative": "請輸入絕對路徑。",
     "error.dotdot": "路徑不能包含「..」。",
-    "error.exe": "請選擇 .exe 檔案。",
     "error.nobridge": "找不到 Magpie bridge，請從 Magpie 開啟此頁面。",
     "note.launch": "已送出啟動請求，程式會在背景啟動。",
     "note.saved": "已儲存。",
@@ -94,7 +92,7 @@ const TEXT = {
     "usage.top": "最常用模型",
     "section.about": "關於",
     "about.separate": "浮窗是獨立程式，關閉 Magpie 不會關閉它；可在浮窗內設定開機啟動。",
-    "about.smartscreen": "首次啟動若出現 Windows SmartScreen，請選擇「仍要執行」。",
+    "about.smartscreen": "首次啟動若出現 Windows SmartScreen 或 macOS Gatekeeper 警告，請選擇允許執行（或右鍵開啟）。",
     "about.data": "資料與下載的程式位於",
     "about.logs": "若啟動失敗，詳情會寫入 Magpie 的日誌。",
   },
@@ -117,14 +115,13 @@ const TEXT = {
     "btn.relaunch": "Relaunch panel",
     "auto.toggle": "Launch with Magpie",
     "path.label": "Custom binary path",
-    "path.placeholder": "C:\\path\\to\\magpie-panel.exe (blank downloads automatically)",
+    "path.placeholder": "/path/to/magpie-panel (blank downloads automatically)",
     "btn.save": "Save",
     "btn.clear": "Clear",
     "btn.saving": "Saving…",
-    "path.hint": 'Absolute path only; ".." is not allowed.',
+    "path.hint": 'Absolute path only; ".." is not allowed. Windows needs .exe; macOS accepts .app or its executable; Linux an executable.',
     "error.relative": "Enter an absolute path.",
     "error.dotdot": 'The path must not contain "..".',
-    "error.exe": "Choose a .exe file.",
     "error.nobridge": "Magpie's bridge is missing; open this page from Magpie.",
     "note.launch": "Launch requested; the app starts in the background.",
     "note.saved": "Saved.",
@@ -141,7 +138,7 @@ const TEXT = {
     "usage.top": "Top model",
     "section.about": "About",
     "about.separate": "The panel is a separate app: closing Magpie leaves it running. Turn on login start inside the panel.",
-    "about.smartscreen": "If Windows SmartScreen appears on first launch, choose “Run anyway”.",
+    "about.smartscreen": "If Windows SmartScreen or macOS Gatekeeper warns on first launch, allow the app (or right-click Open).",
     "about.data": "Data and downloaded binaries live in",
     "about.logs": "If launching fails, the details go to Magpie's log.",
   },
@@ -408,11 +405,11 @@ function showBridgeNotice() {
 
 function validatePath(value) {
   if (!value) return "";
+  if (value.includes("\0")) return "error.relative";
   if (value.split(/[\\/]+/).includes("..")) return "error.dotdot";
-  if (!/^[A-Za-z]:[\\/]/.test(value) && !/^\\\\/.test(value)) {
-    return "error.relative";
-  }
-  if (!/\.exe$/i.test(value)) return "error.exe";
+  const windowsAbsolute = /^[A-Za-z]:[\\/]/.test(value) || /^\\\\/.test(value);
+  const posixAbsolute = value.startsWith("/");
+  if (!windowsAbsolute && !posixAbsolute) return "error.relative";
   return "";
 }
 

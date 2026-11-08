@@ -64,7 +64,7 @@
             spellcheck="false"
             autocomplete="off"
             data-i18n-placeholder="path.placeholder"
-            placeholder="C:\path\to\magpie-panel.exe"
+            placeholder="/path/to/magpie-panel"
           />
           <div class="actions">
             <button id="saveBtn" type="button" data-i18n="btn.save">儲存</button>
@@ -102,11 +102,11 @@
           浮窗是獨立程式，關閉 Magpie 不會關閉它；可在浮窗內設定開機啟動。
         </p>
         <p data-i18n="about.smartscreen">
-          首次啟動若出現 Windows SmartScreen，請選擇「仍要執行」。
+          首次啟動若出現 Windows SmartScreen 或 macOS Gatekeeper 警告，請選擇允許執行（或右鍵開啟）。
         </p>
         <p>
           <span data-i18n="about.data">資料與下載的程式位於</span>
-          <code>%APPDATA%\MagpiePanel</code>
+          <code>%APPDATA%\MagpiePanel · ~/Library/Application Support/MagpiePanel · ~/.config/MagpiePanel</code>
         </p>
         <p data-i18n="about.logs">若啟動失敗，詳情會寫入 Magpie 的日誌。</p>
       </section>

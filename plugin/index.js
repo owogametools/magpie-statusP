@@ -1,10 +1,10 @@
 // Magpie Panel's plugin half.
 //
-// The floating panel is a separate Windows app. This host entry makes sure a
-// binary exists (a hand-picked path, an NSIS install, an earlier download, or
-// the latest GitHub release) and starts it detached, so the panel outlives
-// Magpie. The page is a sandboxed iframe with no network access; it can only
-// show status and read/write this plugin's options.
+// The floating panel is a separate desktop app. This host entry makes sure a
+// binary exists (a hand-picked path, a manual install, an earlier download, or
+// the latest GitHub release for this OS and CPU) and starts it detached, so the
+// panel outlives Magpie. The page is a sandboxed iframe with no network access;
+// it can only show status and read/write this plugin's options.
 //
 // Every export is treated as another plugin factory, so only the default
 // export leaves this module. Helpers stay module-private.
@@ -15,20 +15,22 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { compareVersions, shouldUpgrade, versionDirName } from "./version.js";
 import {
-  compareVersions,
-  shouldUpgrade,
-  versionDirName,
-} from "./version.js";
+  ASSETS,
+  appBundleOf,
+  dataDir,
+  installerCandidates,
+  targetFor,
+  versionBinary,
+} from "./platform.js";
 
 const PLUGIN_ID = "magpie-panel";
-const PLUGIN_VERSION = "0.1.4";
+const PLUGIN_VERSION = "0.2.0";
 const USER_AGENT = `magpie-panel-plugin/${PLUGIN_VERSION}`;
 const REPO = "owogametools/magpie-statusP";
 const RELEASE_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
-const ZIP_ASSET = "magpie-panel-windows-amd64.zip";
-const SUMS_ASSET = "SHA256SUMS";
-const EXE_NAME = "magpie-panel.exe";
+const SUMS_ASSET = ASSETS.sums;
 const RELEASE_TTL_MS = 10 * 60 * 1000;
 const RELEASE_TIMEOUT_MS = 8 * 1000;
 const DOWNLOAD_TIMEOUT_MS = 120 * 1000;
@@ -58,38 +60,18 @@ class PanelError extends Error {
   }
 }
 
-function isWindows() {
-  return process.platform === "win32";
-}
-
-function appDataDir() {
-  const base =
-    process.env.APPDATA ||
-    (isWindows() ? path.join(os.homedir(), "AppData", "Roaming") : "");
-  if (!base) {
-    throw new PanelError(
-      "no-appdata",
-      "APPDATA is not set, so %APPDATA%\\MagpiePanel cannot be located",
-    );
-  }
-  return path.join(base, "MagpiePanel");
-}
-
-function localAppDataDir() {
-  const base =
-    process.env.LOCALAPPDATA ||
-    (isWindows() ? path.join(os.homedir(), "AppData", "Local") : "");
-  if (!base) {
-    throw new PanelError(
-      "no-localappdata",
-      "LOCALAPPDATA is not set, so installed programs cannot be located",
-    );
-  }
-  return path.join(base, "Programs");
-}
-
 function binRoot() {
-  return path.join(appDataDir(), "bin");
+  let base;
+  try {
+    base = dataDir(process.platform);
+  } catch (error) {
+    throw new PanelError(
+      "no-config-dir",
+      error && error.message ? error.message : String(error),
+      error,
+    );
+  }
+  return path.join(base, "bin");
 }
 
 function makeLogger(input) {
@@ -127,8 +109,9 @@ function normalizeOptions(raw) {
 }
 
 // binaryPath is user input: only an absolute, non-traversing path is used.
-// On Windows the panel is always an .exe.
-function binaryOverride(raw) {
+// Windows still requires an .exe; macOS and Linux accept a plain file (macOS
+// also accepts a .app, resolved by resolveOverride).
+function binaryOverride(raw, platform) {
   const value = typeof raw === "string" ? raw.trim() : "";
   if (!value) return "";
   if (value.includes("\0")) {
@@ -146,13 +129,22 @@ function binaryOverride(raw) {
       `binaryPath must be an absolute path: ${value}`,
     );
   }
-  if (isWindows() && path.extname(value).toLowerCase() !== ".exe") {
+  if (platform === "win32" && path.extname(value).toLowerCase() !== ".exe") {
     throw new PanelError(
       "binary-path-invalid",
       `binaryPath must name a .exe on Windows: ${value}`,
     );
   }
   return value;
+}
+
+// Strips trailing separators so ".../Magpie Panel.app/" is still a bundle, but
+// keeps roots such as "C:\" or "/" intact.
+function trimTrailingSeparators(value) {
+  const trimmed = value.replace(/[\\/]+$/, "");
+  if (!trimmed) return value;
+  if (/^[A-Za-z]:$/.test(trimmed)) return value;
+  return trimmed;
 }
 
 async function isFile(file) {
@@ -186,26 +178,29 @@ async function requireFile(file, what) {
   return file;
 }
 
-// The NSIS installer's default per-user location, including the spellings a
-// package name may turn into.
-function installerCandidates() {
-  if (!isWindows()) return [];
-  let programs;
-  try {
-    programs = localAppDataDir();
-  } catch {
-    return [];
+// Resolves binaryPath for the running platform: a macOS .app is expanded to
+// its Contents/MacOS executable, and any other position must be a file.
+async function resolveOverride(raw, target) {
+  const value = binaryOverride(raw, target.platform);
+  if (!value) return null;
+  const candidate = trimTrailingSeparators(value);
+
+  if (target.os === "macos" && /\.app$/i.test(candidate)) {
+    const inner = path.join(candidate, "Contents", "MacOS", target.binaryName);
+    await requireFile(inner, "binaryPath");
+    return { path: inner, appPath: candidate, version: null, source: "override" };
   }
-  return [
-    path.join(programs, "Magpie Panel", "Magpie Panel.exe"),
-    path.join(programs, "Magpie-Panel", "Magpie-Panel.exe"),
-    path.join(programs, "MagpiePanel", "MagpiePanel.exe"),
-    path.join(programs, "magpie-panel", "magpie-panel.exe"),
-  ];
+
+  await requireFile(candidate, "binaryPath");
+  return {
+    path: candidate,
+    appPath: appBundleOf(candidate) || undefined,
+    version: null,
+    source: "override",
+  };
 }
 
-async function installedVersions() {
-  if (!isWindows()) return [];
+async function installedVersions(target) {
   let root;
   try {
     root = binRoot();
@@ -226,8 +221,14 @@ async function installedVersions() {
   const found = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    const exe = path.join(root, entry.name, EXE_NAME);
-    if (await isFile(exe)) found.push({ version: entry.name, path: exe });
+    const binary = versionBinary(root, entry.name, target.platform);
+    if (await isFile(binary)) {
+      found.push({
+        version: entry.name,
+        path: binary,
+        appPath: appBundleOf(binary) || undefined,
+      });
+    }
   }
   found.sort((a, b) => compareVersions(b.version, a.version));
   return found;
@@ -326,7 +327,7 @@ function releaseAsset(release, names) {
   const tag = release && release.tag_name ? ` ${release.tag_name}` : "";
   throw new PanelError(
     "missing-asset",
-    `release${tag} has no ${names.join(" or ")} asset; expected ${ZIP_ASSET} and ${SUMS_ASSET}`,
+    `release${tag} has no ${names.join(" or ")} asset`,
   );
 }
 
@@ -429,8 +430,65 @@ async function extractZip(zipPath, destination, log) {
   }
 }
 
+// `ditto` preserves the app bundle and its ad-hoc signature; `unzip` is a
+// fallback for hosts without it.
+async function extractMacZip(zipPath, destination, log) {
+  let dittoMessage = "";
+  try {
+    await execFileAsync("ditto", ["-x", "-k", zipPath, destination], {
+      timeout: 180000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return;
+  } catch (error) {
+    dittoMessage = error && error.message ? error.message : String(error);
+    log("debug", `ditto could not extract the zip: ${dittoMessage}`);
+  }
+
+  try {
+    await execFileAsync("unzip", ["-q", zipPath, "-d", destination], {
+      timeout: 180000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+  } catch (error) {
+    const unzipMessage = error && error.message ? error.message : String(error);
+    throw new PanelError(
+      "extract-failed",
+      `could not extract ${path.basename(zipPath)}: ditto failed (${dittoMessage}); unzip failed (${unzipMessage})`,
+      error,
+    );
+  }
+}
+
+async function extractTarGz(archivePath, destination, log) {
+  try {
+    await execFileAsync("tar", ["-xzf", archivePath, "-C", destination], {
+      timeout: 180000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    log("debug", `tar could not extract ${path.basename(archivePath)}: ${message}`);
+    throw new PanelError(
+      "extract-failed",
+      `could not extract ${path.basename(archivePath)}: tar failed (${message})`,
+      error,
+    );
+  }
+}
+
+function extractArchive(archivePath, destination, target, log) {
+  if (target.kind === "tar.gz") {
+    return extractTarGz(archivePath, destination, log);
+  }
+  if (target.os === "macos") {
+    return extractMacZip(archivePath, destination, log);
+  }
+  return extractZip(archivePath, destination, log);
+}
+
 // Breadth-first, so a top-level magpie-panel.exe wins over a nested copy.
-async function findExe(root) {
+async function findWindowsExe(root) {
   const queue = [root];
   let fallback = "";
   let seen = 0;
@@ -452,41 +510,165 @@ async function findExe(root) {
       }
       if (!entry.isFile()) continue;
       const lower = entry.name.toLowerCase();
-      if (lower === EXE_NAME) return full;
+      if (lower === "magpie-panel.exe") return full;
       if (!fallback && lower === "magpie panel.exe") fallback = full;
     }
   }
   return fallback;
 }
 
-async function downloadLatest(log) {
-  if (!isWindows()) {
-    throw new PanelError(
-      "unsupported-platform",
-      "Magpie Panel can only be downloaded and launched on Windows",
-    );
+// Breadth-first search for an exact file name. Linux archives are flat, but a
+// single top-level directory is tolerated.
+async function findNamedFile(root, name) {
+  const queue = [root];
+  let seen = 0;
+  while (queue.length > 0) {
+    const dir = queue.shift();
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      seen += 1;
+      if (seen > MAX_SCAN_ENTRIES) return "";
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(full);
+        continue;
+      }
+      if (entry.isFile() && entry.name === name) return full;
+    }
   }
+  return "";
+}
 
+async function macAppPayload(appPath, binaryName) {
+  const macosDir = path.join(appPath, "Contents", "MacOS");
+  const expected = path.join(macosDir, binaryName);
+  if (await isFile(expected)) return { path: expected, appPath };
+
+  let entries;
+  try {
+    entries = await fs.readdir(macosDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  let fallback = "";
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const full = path.join(macosDir, entry.name);
+    if (!(await isFile(full))) continue;
+    if (!fallback) fallback = full;
+    try {
+      const stat = await fs.stat(full);
+      if ((stat.mode & 0o111) !== 0) return { path: full, appPath };
+    } catch {
+      // Keep the first regular file as the fallback.
+    }
+  }
+  return fallback ? { path: fallback, appPath } : null;
+}
+
+// Breadth-first, so the shallowest .app bundle wins.
+async function findMacApp(root, binaryName) {
+  const queue = [root];
+  let seen = 0;
+  while (queue.length > 0) {
+    const dir = queue.shift();
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      seen += 1;
+      if (seen > MAX_SCAN_ENTRIES) return null;
+      if (!entry.isDirectory()) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.name.toLowerCase().endsWith(".app")) {
+        const payload = await macAppPayload(full, binaryName);
+        if (payload) return payload;
+        continue;
+      }
+      queue.push(full);
+    }
+  }
+  return null;
+}
+
+async function findPayload(extractDir, target) {
+  if (target.os === "windows") {
+    const exe = await findWindowsExe(extractDir);
+    return exe ? { path: exe } : null;
+  }
+  if (target.os === "macos") {
+    return findMacApp(extractDir, target.binaryName);
+  }
+  const binary = await findNamedFile(extractDir, target.binaryName);
+  return binary ? { path: binary } : null;
+}
+
+function insideDir(parent, child) {
+  const relative = path.relative(parent, child);
+  return (
+    relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
+  );
+}
+
+function payloadExpectation(target) {
+  if (target.os === "windows") {
+    return { code: "missing-exe", label: "magpie-panel.exe" };
+  }
+  if (target.os === "macos") {
+    return {
+      code: "missing-app",
+      label: `Magpie Panel.app/Contents/MacOS/${target.binaryName}`,
+    };
+  }
+  return { code: "missing-binary", label: "magpie-panel" };
+}
+
+function downloadedBinary(root, version, target) {
+  const binaryPath = versionBinary(root, version, target.platform);
+  return {
+    path: binaryPath,
+    appPath: appBundleOf(binaryPath) || undefined,
+    version,
+    source: "download",
+  };
+}
+
+async function downloadLatest(target, log) {
   const release = await latestRelease(log);
   const version = versionDirName(release.tag_name);
   const root = binRoot();
   const finalDir = path.join(root, version);
-  const finalExe = path.join(finalDir, EXE_NAME);
+  const expectedFinal = versionBinary(root, version, target.platform);
+  const expectation = payloadExpectation(target);
 
-  if (await isFile(finalExe)) {
+  if (await isFile(expectedFinal)) {
     log("info", `release ${version} is already downloaded`);
-    return { path: finalExe, version, source: "download" };
+    return downloadedBinary(root, version, target);
   }
 
-  const zipAsset = releaseAsset(release, [ZIP_ASSET]);
+  const archiveAsset = releaseAsset(release, [target.asset]);
   const sumsAsset = releaseAsset(release, [SUMS_ASSET, `${SUMS_ASSET}.txt`]);
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "magpie-panel-"));
+  let staging = "";
   try {
-    const zipPath = path.join(tempDir, ZIP_ASSET);
+    const archivePath = path.join(tempDir, target.asset);
     const sumsPath = path.join(tempDir, sumsAsset.name);
 
-    const zipBuffer = await download(zipAsset.url, zipPath, ZIP_ASSET, log);
+    const archiveBuffer = await download(
+      archiveAsset.url,
+      archivePath,
+      target.asset,
+      log,
+    );
     const sumsBuffer = await download(
       sumsAsset.url,
       sumsPath,
@@ -494,81 +676,98 @@ async function downloadLatest(log) {
       log,
     );
 
-    const expected = sumFor(sumsBuffer.toString("utf8"), ZIP_ASSET);
+    const expected = sumFor(sumsBuffer.toString("utf8"), target.asset);
     if (!expected) {
       throw new PanelError(
         "sha-missing",
-        `${sumsAsset.name} in release ${version} has no SHA256 line for ${ZIP_ASSET}`,
+        `${sumsAsset.name} in release ${version} has no SHA256 line for ${target.asset}`,
       );
     }
-    const actual = createHash("sha256").update(zipBuffer).digest("hex");
+    const actual = createHash("sha256").update(archiveBuffer).digest("hex");
     if (!hashMatches(expected, actual)) {
       throw new PanelError(
         "sha-mismatch",
-        `SHA256 mismatch for ${ZIP_ASSET} in release ${version}: expected ${expected}, got ${actual}`,
+        `SHA256 mismatch for ${target.asset} in release ${version}: expected ${expected}, got ${actual}`,
       );
     }
-    log("info", `SHA256 verified for ${ZIP_ASSET} (${version})`);
+    log("info", `SHA256 verified for ${target.asset} (${version})`);
 
-    const extractDir = path.join(tempDir, "extract");
-    await fs.mkdir(extractDir, { recursive: true });
-    await extractZip(zipPath, extractDir, log);
-
-    const found = await findExe(extractDir);
-    if (!found) {
-      throw new PanelError(
-        "missing-exe",
-        `${ZIP_ASSET} in release ${version} contains no ${EXE_NAME}`,
-      );
-    }
-
+    // Extract straight into a staging directory on the same volume as bin/;
+    // preserving the archive's modes is why the tree is moved, not copied.
     await fs.mkdir(root, { recursive: true });
-    const staging = path.join(
+    staging = path.join(
       root,
       `.staging-${process.pid}-${Date.now().toString(36)}`,
     );
-    await fs.rm(staging, { recursive: true, force: true });
-    await fs.mkdir(staging, { recursive: false });
-    let moved = false;
     try {
-      await fs.copyFile(found, path.join(staging, EXE_NAME));
-      if (await pathExists(finalDir)) {
-        if (await isFile(finalExe)) {
-          // Another load installed this version while we downloaded.
-          await fs.rm(staging, { recursive: true, force: true }).catch(() => {});
-          return { path: finalExe, version, source: "download" };
+      await fs.rm(staging, { recursive: true, force: true });
+      await fs.mkdir(staging, { recursive: false });
+      await extractArchive(archivePath, staging, target, log);
+
+      let payload = await findPayload(staging, target);
+      if (!payload) {
+        throw new PanelError(
+          expectation.code,
+          `${target.asset} in release ${version} contains no ${expectation.label}`,
+        );
+      }
+      if (!insideDir(staging, payload.path)) {
+        throw new PanelError(
+          expectation.code,
+          `${target.asset} in release ${version} extracted ${expectation.label} outside the staging directory`,
+        );
+      }
+      if (target.os === "windows") {
+        // findWindowsExe also accepts mygo's "Magpie Panel.exe". The installed
+        // layout and the post-rename check use the release's stable name.
+        const wanted = path.join(staging, "magpie-panel.exe");
+        if (payload.path.toLowerCase() !== wanted.toLowerCase()) {
+          await fs.rename(payload.path, wanted);
+          payload = { ...payload, path: wanted };
         }
-        // A half-written directory from an interrupted earlier attempt.
-        await fs.rm(finalDir, { recursive: true, force: true });
       }
-      // Same volume as bin/, so this is the atomic step. Older version
-      // directories are left alone, which is the rollback path.
-      await fs.rename(staging, finalDir);
-      moved = true;
-    } catch (error) {
-      if (await isFile(finalExe)) {
-        await fs.rm(staging, { recursive: true, force: true }).catch(() => {});
-        return { path: finalExe, version, source: "download" };
+      if (target.os === "linux") {
+        // CI should preserve the mode, but a tar made on Windows may not.
+        await fs.chmod(payload.path, 0o755).catch(() => {});
       }
-      throw new PanelError(
-        "install-failed",
-        `could not install release ${version} into ${finalDir}: ${error.message}`,
-        error,
-      );
+
+      try {
+        if (await pathExists(finalDir)) {
+          if (await isFile(expectedFinal)) {
+            // Another load installed this version while we downloaded.
+            return downloadedBinary(root, version, target);
+          }
+          // A half-written directory from an interrupted earlier attempt.
+          await fs.rm(finalDir, { recursive: true, force: true });
+        }
+        // Same volume as bin/, so this is the atomic step. Older version
+        // directories are left alone, which is the rollback path.
+        await fs.rename(staging, finalDir);
+      } catch (error) {
+        if (await isFile(expectedFinal)) {
+          return downloadedBinary(root, version, target);
+        }
+        throw new PanelError(
+          "install-failed",
+          `could not install release ${version} into ${finalDir}: ${error.message}`,
+          error,
+        );
+      }
     } finally {
-      if (!moved) {
-        await fs.rm(staging, { recursive: true, force: true }).catch(() => {});
-      }
+      // A successful rename moved this path away; force ignores its absence.
+      await fs.rm(staging, { recursive: true, force: true }).catch(() => {});
     }
 
-    if (!(await isFile(finalExe))) {
+    // Staging paths are stale after the rename; recompute from the version.
+    if (!(await isFile(expectedFinal))) {
       throw new PanelError(
-        "missing-exe",
-        `release ${version} was extracted but ${finalExe} is missing`,
+        expectation.code,
+        `release ${version} was extracted but ${expectedFinal} is missing`,
       );
     }
-    log("info", `installed Magpie Panel ${version} at ${finalExe}`);
-    return { path: finalExe, version, source: "download" };
+    const binary = downloadedBinary(root, version, target);
+    log("info", `installed Magpie Panel ${version} at ${binary.path}`);
+    return binary;
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -576,22 +775,33 @@ async function downloadLatest(log) {
 
 async function ensureBinary(rawOptions, log) {
   const options = normalizeOptions(rawOptions);
-
-  const override = binaryOverride(options.binaryPath);
-  if (override) {
-    await requireFile(override, "binaryPath");
-    log("info", `using binaryPath override: ${override}`);
-    return { path: override, version: null, source: "override" };
+  const target = targetFor(process.platform, process.arch);
+  if (!target) {
+    throw new PanelError(
+      "unsupported-platform",
+      `Magpie Panel has no build for ${process.platform}/${process.arch}`,
+    );
   }
 
-  for (const candidate of installerCandidates()) {
+  const override = await resolveOverride(options.binaryPath, target);
+  if (override) {
+    log("info", `using binaryPath override: ${override.path}`);
+    return override;
+  }
+
+  for (const candidate of installerCandidates(process.platform)) {
     if (await isFile(candidate)) {
       log("info", `using installed Magpie Panel: ${candidate}`);
-      return { path: candidate, version: null, source: "installer" };
+      return {
+        path: candidate,
+        appPath: appBundleOf(candidate) || undefined,
+        version: null,
+        source: "installer",
+      };
     }
   }
 
-  const installed = await installedVersions();
+  const installed = await installedVersions(target);
   if (installed.length > 0) {
     const current = installed[0];
     let release;
@@ -615,7 +825,7 @@ async function ensureBinary(rawOptions, log) {
     const next = versionDirName(release.tag_name);
     log("info", `upgrading Magpie Panel ${current.version} -> ${next}`);
     try {
-      return await downloadLatest(log);
+      return await downloadLatest(target, log);
     } catch (error) {
       log(
         "warn",
@@ -627,7 +837,7 @@ async function ensureBinary(rawOptions, log) {
     }
   }
 
-  return downloadLatest(log);
+  return downloadLatest(target, log);
 }
 
 function launchRequest(options, now) {
@@ -644,18 +854,25 @@ function launchRequest(options, now) {
 }
 
 // spawn() reports a missing or unlaunchable file through an "error" event,
-// not a throw, so wait for either that or "spawn".
-function launch(pathname, log) {
-  if (!isWindows()) {
-    throw new PanelError(
-      "unsupported-platform",
-      "Magpie Panel can only be launched on Windows",
+// not a throw, so wait for either that or "spawn". On macOS an app bundle is
+// handed to LaunchServices with `open`, which exits once the app starts.
+function launch(binary, log) {
+  const appPath =
+    binary && typeof binary.appPath === "string" ? binary.appPath : "";
+  const useOpen = process.platform === "darwin" && Boolean(appPath);
+  const command = useOpen ? "open" : binary && binary.path;
+  const args = useOpen ? [appPath] : [];
+
+  if (typeof command !== "string" || !command) {
+    return Promise.reject(
+      new PanelError("launch-failed", "there is no binary path to launch"),
     );
   }
+
   return new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawn(pathname, [], {
+      child = spawn(command, args, {
         detached: true,
         stdio: "ignore",
         windowsHide: true,
@@ -664,7 +881,7 @@ function launch(pathname, log) {
       reject(
         new PanelError(
           "launch-failed",
-          `could not launch ${pathname}: ${error.message}`,
+          `could not launch ${command}: ${error.message}`,
           error,
         ),
       );
@@ -686,7 +903,11 @@ function launch(pathname, log) {
       } catch {
         // Already gone; nothing to detach.
       }
-      log("info", `detached Magpie Panel (pid ${child.pid || "unknown"})`);
+      if (useOpen) {
+        log("info", `opened ${appPath}`);
+      } else {
+        log("info", `detached Magpie Panel (pid ${child.pid || "unknown"})`);
+      }
       resolve(child.pid || 0);
     };
 
@@ -694,7 +915,7 @@ function launch(pathname, log) {
       finish(
         new PanelError(
           "launch-failed",
-          `could not launch ${pathname}: ${error.message}`,
+          `could not launch ${command}: ${error.message}`,
           error,
         ),
       );
@@ -721,7 +942,7 @@ async function bootstrap(input, rawOptions, log) {
     return;
   }
   lastLaunchedAt = now;
-  await launch(binary.path, log);
+  await launch(binary, log);
   const version = binary.version ? ` ${binary.version}` : "";
   log("info", `Magpie Panel${version} is running (${reason})`);
 }

@@ -38,6 +38,21 @@ type Model struct {
 
 var spaces = regexp.MustCompile(`\s{2,}`)
 
+// magpieBinaryNames lists the CLI command and the per-platform release
+// artifacts for this OS, so a downloaded or unpacked CLI is found without a
+// rename. Cross-platform names are excluded: a Linux build is not launchable
+// on Windows (and the reverse).
+func magpieBinaryNames() []string {
+	switch runtime.GOOS {
+	case "windows":
+		return []string{"magpie.exe", "magpie-windows-amd64.exe", "magpie-windows-arm64.exe", "magpie"}
+	case "darwin":
+		return []string{"magpie", "magpie-darwin-arm64", "magpie-darwin-amd64", "magpie-darwin-universal"}
+	default:
+		return []string{"magpie", "magpie-linux-amd64", "magpie-linux-arm64"}
+	}
+}
+
 // Runner invokes one magpie binary.
 type Runner struct {
 	Bin string
@@ -65,7 +80,7 @@ func FindBinary(override string) string {
 	if p := usable(os.Getenv("MAGPIE_BIN")); p != "" {
 		return p
 	}
-	for _, name := range []string{"magpie", "magpie.exe", "magpie-windows-amd64.exe", "magpie-windows-arm64.exe"} {
+	for _, name := range magpieBinaryNames() {
 		if p, err := exec.LookPath(name); err == nil {
 			if p = usable(p); p != "" {
 				return p
@@ -83,11 +98,36 @@ func FindBinary(override string) string {
 	if d := os.Getenv("PROGRAMFILES"); d != "" {
 		dirs = append(dirs, filepath.Join(d, "magpie"), filepath.Join(d, "Magpie"))
 	}
+	if runtime.GOOS == "darwin" {
+		dirs = append(dirs,
+			"/Applications/Magpie.app/Contents/MacOS",
+			"/Applications/magpie.app/Contents/MacOS",
+		)
+	}
+	if runtime.GOOS == "linux" {
+		dirs = append(dirs,
+			"/usr/local/bin",
+			"/usr/bin",
+			"/opt/magpie",
+		)
+	}
 	if d, err := os.UserHomeDir(); err == nil {
 		dirs = append(dirs, filepath.Join(d, ".magpie"), filepath.Join(d, "magpie"))
+		if runtime.GOOS == "darwin" {
+			dirs = append(dirs,
+				filepath.Join(d, "Applications", "Magpie.app", "Contents", "MacOS"),
+				filepath.Join(d, "Applications", "magpie.app", "Contents", "MacOS"),
+			)
+		}
+		if runtime.GOOS == "linux" {
+			dirs = append(dirs,
+				filepath.Join(d, ".local", "bin"),
+				filepath.Join(d, "go", "bin"),
+			)
+		}
 	}
 	for _, dir := range dirs {
-		for _, name := range []string{"magpie.exe", "magpie-windows-amd64.exe", "magpie"} {
+		for _, name := range magpieBinaryNames() {
 			if p := usable(filepath.Join(dir, name)); p != "" {
 				return p
 			}

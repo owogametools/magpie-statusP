@@ -9,18 +9,69 @@ permissions:
   contents: write
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check plugin manifests, versions, and platform policy
+        run: node --test plugin/manifest.test.mjs plugin/version.test.mjs plugin/platform.test.mjs
+
+      - name: Check the tag matches the package and app versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          app_version="$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\([^"]*\)".*/\1/p' app/mygo.config.ts | head -1)"
+          test -n "${version}"
+          test -n "${app_version}"
+          test "${tag}" = "${version}"
+          test "${tag}" = "${app_version}"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        working-directory: app
+        run: go test ./...
+
+      - name: Vet
+        working-directory: app
+        run: go vet ./...
+
+  build:
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            runner: windows-latest
+          - name: macos
+            runner: macos-latest
+          - name: linux
+            runner: ubuntu-latest
     defaults:
       run:
         working-directory: app
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Check plugin manifests
-        working-directory: .
-        run: node --test plugin/manifest.test.mjs plugin/version.test.mjs
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -36,19 +87,13 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Test
-        run: go test ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Build
-        run: bun run build
-
-      - name: Package the panel and checksums
+      - name: Build Windows assets
+        if: matrix.name == 'windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          bun run build
+
           $buildDir = "build/windows-amd64"
           if (-not (Test-Path $buildDir)) {
             throw "mygo build left no $buildDir"
@@ -76,31 +121,93 @@ jobs:
           $zip = Join-Path (Resolve-Path $out) "magpie-panel-windows-amd64.zip"
           Remove-Item $zip -ErrorAction SilentlyContinue
           Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -CompressionLevel Optimal
-          $published = @($zip)
           if ($setup) {
-            $setupCopy = Join-Path $out $setup.Name
-            Copy-Item $setup.FullName $setupCopy
-            $published += $setupCopy
+            Copy-Item $setup.FullName (Join-Path $out $setup.Name)
           }
 
-          # Only published files, with LF endings so sha256sum -c works.
-          $lines = foreach ($file in $published) {
-            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
-            "$hash  $(Split-Path $file -Leaf)"
-          }
-          $sums = Join-Path (Resolve-Path $out) "SHA256SUMS"
-          [System.IO.File]::WriteAllText(
-            $sums,
-            (($lines -join "`n") + "`n"),
-            (New-Object System.Text.UTF8Encoding($false))
-          )
+      - name: Build macOS assets
+        if: matrix.name == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun run build -- -platform darwin/universal
+
+          build_dir="build/darwin-universal"
+          app="$build_dir/Magpie Panel.app"
+          if [ ! -d "$app" ]; then
+            echo "no app bundle at $app" >&2
+            exit 1
+          fi
+          dmg="$(find "$build_dir" -maxdepth 1 -name '*.dmg' -type f | head -1)"
+          if [ -z "$dmg" ]; then
+            echo "no dmg in $build_dir" >&2
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          cp "$dmg" release-assets/magpie-panel-macos-universal.dmg
+          # ditto keeps the bundle and its ad-hoc signature intact.
+          ditto -c -k --keepParent "$app" release-assets/magpie-panel-macos-universal.zip
+
+      - name: Build Linux assets
+        if: matrix.name == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun run build -- -platform linux/amd64,linux/arm64
+
+          amd_tar="$(find build/linux-amd64 -maxdepth 1 -name 'magpie-panel-*-linux-amd64.tar.gz' -type f | head -1)"
+          arm_tar="$(find build/linux-arm64 -maxdepth 1 -name 'magpie-panel-*-linux-arm64.tar.gz' -type f | head -1)"
+          amd_deb="$(find build/linux-amd64 -maxdepth 1 -name 'magpie-panel_*_amd64.deb' -type f | head -1)"
+          arm_deb="$(find build/linux-arm64 -maxdepth 1 -name 'magpie-panel_*_arm64.deb' -type f | head -1)"
+          install_sh="build/linux-amd64/install.sh"
+
+          for file in "$amd_tar" "$arm_tar" "$amd_deb" "$arm_deb" "$install_sh"; do
+            if [ -z "$file" ] || [ ! -f "$file" ]; then
+              echo "missing build output: $file" >&2
+              exit 1
+            fi
+          done
+
+          mkdir -p release-assets
+          cp "$amd_tar" release-assets/magpie-panel-linux-amd64.tar.gz
+          cp "$arm_tar" release-assets/magpie-panel-linux-arm64.tar.gz
+          cp "$amd_deb" release-assets/
+          cp "$arm_deb" release-assets/
+          cp "$install_sh" release-assets/magpie-panel-install.sh
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.name }}
+          path: app/release-assets/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Generate SHA256SUMS over every asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\n' \
+            | sort \
+            | while IFS= read -r file; do sha256sum "$file"; done > SHA256SUMS
+          sha256sum -c SHA256SUMS
 
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
           name: Magpie Panel ${{ github.ref_name }}
           generate_release_notes: true
-          files: |
-            app/release-assets/magpie-panel-windows-amd64.zip
-            app/release-assets/SHA256SUMS
-            app/release-assets/*-setup-*.exe
+          overwrite_files: true
+          files: release-assets/*

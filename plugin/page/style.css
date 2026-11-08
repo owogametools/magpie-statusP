@@ -347,6 +347,7 @@ input[type="text"]:disabled {
   background: var(--inset);
   border-radius: 4px;
   padding: 1px 4px;
+  overflow-wrap: anywhere;
 }
 
 .notice {

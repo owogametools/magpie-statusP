@@ -4,7 +4,7 @@ export default defineConfig({
   name: "Magpie Panel",
   slug: "magpie-panel",
   identifier: "com.beeowo.magpiepanel",
-  version: "0.1.6",
+  version: "0.2.0",
   // `mygo dev` runs devCommand and loads devUrl; `mygo build` runs
   // buildCommand and embeds frontendDist into the app.
   devUrl: "http://localhost:5173",
@@ -13,4 +13,7 @@ export default defineConfig({
   frontendDist: "dist",
   bindings: "src/mygo.ts",
   out: "build",
+  linux: {
+    command: "magpie-panel",
+  },
 });
